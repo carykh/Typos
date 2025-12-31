@@ -1,5 +1,5 @@
 import java.util.Map;
-import com.hamoid.*;
+
 import java.util.Dictionary;
 import java.util.Enumeration;
 import java.util.Hashtable;
@@ -7,23 +7,17 @@ import java.util.Hashtable;
 String VIDEO_FILENAME = "typo_video_blah.mp4";
 boolean SAVE_VIDEO = true;
 boolean ONLY_SAVE_FINAL_PATH_FRAMES = false;
-VideoExport videoExport;
 
 int N = 400;
 int BUCKET_MAX = 50;
 int[] PRESET_PATH = null;
 
-String[] strat_codes = {"RECT-1.0","DIAM-1.0","OS-0.6667"};
-// first crew test {"RECT-3.0,NOM","RECT-3.0","RECT-1.0"};
-// round crew test {"RECT-1.0","OCT-1.0","CIR-1.0"};
-// diamond crew test {"RECT-1.0","CIR-1.0","DIAM-1.0"};
-// spear test {"CIR-1.0","DIAM-1.0","OS-0.6667"};
+String[] strat_codes = {"RECT-1.0","DIAM-1.0","OCT-1.0","CIR-1.0","OS-0.6667","SOS-0.6667"};
+// All 6 shapes: Square, Diamond, Octagon, Circle, Obsidian Spear, Sharpened Obsidian Spear
 
 color[] colors =
-//{color(128,0,200), color(90,150,0), color(230,0,70)};
-//{color(160,80,0), color(0,160,160), color(128,0,200)};
-//{color(160,80,0), color(128,0,200), color(255,128,0)};
-{color(90,150,0), color(255,128,0),color(64,0,128)};
+// Bright colors for dark theme - 6 colors for 6 shapes
+{color(120, 200, 80), color(255, 160, 50), color(180, 100, 255), color(80, 180, 220), color(255, 100, 120), color(220, 200, 80)};
 
 
 
@@ -34,16 +28,29 @@ float prog = 0;
 PImage crown;
 Dictionary<String, String> names = new Hashtable<>();
 
-Strategy[] strats = new Strategy[strat_codes.length];
+Strategy[] strats_old = new Strategy[strat_codes.length];
+Strategy[] strats_corner = new Strategy[strat_codes.length];
+Strategy[] strats = strats_corner; // default to corner for newest features
 int[] path_chosen;
-Button[] buttons = {new Button(0,1460,840,200,60,"Slow"),
-new Button(1,1680,840,200,60,"Medium"),
-new Button(2,1460,920,200,60,"Fast"),
-new Button(3,1680,920,200,60,"Instant"),
-new Button(4,1460,1000,200,60,"I + Don't record")
-};
+Button[] buttons;
 
 void setup(){
+  size(1920,1080);
+  
+  // Initialize buttons AFTER size() so height is correct
+  // Position buttons in a vertical stack on the right side
+  float btnW = 120;
+  float btnH = 40;
+  float btnX = width - btnW - 20;
+  float btnStartY = height - 260;
+  float btnGap = 50;
+  buttons = new Button[]{
+    new Button(0, btnX, btnStartY, btnW, btnH, "Slow"),
+    new Button(1, btnX, btnStartY + btnGap, btnW, btnH, "Medium"),
+    new Button(2, btnX, btnStartY + btnGap * 2, btnW, btnH, "Fast"),
+    new Button(3, btnX, btnStartY + btnGap * 3, btnW, btnH, "Instant"),
+    new Button(4, btnX, btnStartY + btnGap * 4, btnW, btnH, "No Record")
+  };
   names.put("RECT-3.0,NOM","Banger Tweet (No Maneuvers)");
   names.put("RECT-3.0","Banger Tweet");
   names.put("RECT-1.0","Square");
@@ -61,40 +68,83 @@ void setup(){
   crown = loadImage("crown.png");
   path_chosen = newPath();
   for(int s = 0; s < strat_codes.length; s++){
-    strats[s] = new Strategy(strat_codes[s], strats, s);
-    strats[s].pathfind(path_chosen);
-  }
-  size(1920,1080);
-  if(SAVE_VIDEO){
-    videoExport = new VideoExport(this, VIDEO_FILENAME);
-    videoExport.setFrameRate(60);
-    videoExport.startMovie();
+    strats_old[s] = new Strategy(strat_codes[s], strats_old, s, false, false);
+    strats_corner[s] = new Strategy(strat_codes[s], strats_corner, s, true, true);
+    strats_old[s].pathfind(path_chosen);
+    strats_corner[s].pathfind(path_chosen);
   }
 }
 void draw(){
-  if(framesSinceLast >= FRAMES_PER_RUN){
-    setNewPaths();
-    framesSinceLast = 0;
-    runs++;
-  }
-  prog = (framesSinceLast+0.5)/FRAMES_PER_RUN*3;
-  framesSinceLast++;
+  // In instant mode, run multiple pathfinds per frame for speed
+  int runsPerFrame = (FRAMES_PER_RUN <= 3) ? 100 : 1;
   
-  background(255,255,200);
-  for(int s = 0; s < strat_codes.length; s++){
-    strats[s].drawStrat(s*width/3,height*0.05,width/3,height*0.4);
+  for(int r = 0; r < runsPerFrame; r++){
+    if(framesSinceLast >= FRAMES_PER_RUN){
+      setNewPaths();
+      framesSinceLast = 0;
+      runs++;
+    }
+    framesSinceLast++;
   }
-  drawGraph(80,700,1200,320);
+  
+  prog = (framesSinceLast+0.5)/FRAMES_PER_RUN*3;
+  
+  background(30, 32, 38);
+  
+  // Layout constants - 6 shapes in each row
+  float headerH = 28;
+  float stratW = width / 6.0;
+  float stratH = 240;  // Reduced height for strategy cells
+  float rowGap = 8;
+  float sidePad = 8;
+  
+  // Only draw detailed visualizations in non-instant mode
+  boolean instantMode = (FRAMES_PER_RUN <= 3);
+  
+  if(!instantMode){
+    // Draw section headers with subtle background
+    noStroke();
+    fill(45, 48, 55);
+    rect(0, 0, width, headerH);
+    rect(0, headerH + stratH + rowGap, width, headerH);
+    
+    fill(180, 185, 200);
+    textAlign(CENTER, CENTER);
+    textSize(16);
+    text("OLD MANEUVERS (4 directions)", width/2, headerH/2);
+    text("CORNER MANEUVERS (8 directions - with corner teleport)", width/2, headerH + stratH + rowGap + headerH/2);
+    
+    // Draw old maneuvers (top row) - 6 shapes
+    float oldY = headerH + 3;
+    for(int s = 0; s < strat_codes.length; s++){
+      strats_old[s].drawStrat(s * stratW + sidePad, oldY, stratW - sidePad * 2, stratH - 6);
+    }
+    
+    // Draw corner maneuvers (second row) - 6 shapes
+    float cornerY = headerH + stratH + rowGap + headerH + 3;
+    for(int s = 0; s < strat_codes.length; s++){
+      strats_corner[s].drawStrat(s * stratW + sidePad, cornerY, stratW - sidePad * 2, stratH - 6);
+    }
+    
+    // Graph area - positioned to avoid button overlap
+    float graphY = cornerY + stratH + 12;
+    float graphH = height - graphY - 15;
+    float graphRightMargin = 180;  // Leave room for buttons on right
+    drawGraph(80, graphY, width - graphRightMargin - 80, graphH - 10);
+  } else {
+    // In instant mode, just draw the graph full-size
+    drawGraph(80, 60, width - 260, height - 160);
+  }
+  
   drawButtons();
+  
   if(ONLY_SAVE_FINAL_PATH_FRAMES){
     if(framesSinceLast >= FRAMES_PER_RUN){
       for(int s = 0; s < 5; s++){
-        videoExport.saveFrame();
       }
     }
   }else{
     if(SAVE_VIDEO && FRAMES_PER_RUN >= 3){
-      videoExport.saveFrame();
     }
   }
 }
@@ -121,54 +171,89 @@ String commafy(int n){
 }
 
 void drawGraph(float x, float y, float w, float h){
-  strokeWeight(2);
-  stroke(128);
-  fill(128);
-  textAlign(CENTER);
-  textSize(30);
+  // Graph background
+  noStroke();
+  fill(40, 44, 52);
+  rect(x - 10, y - 10, w + 20, h + 40, 8);
+  
+  strokeWeight(1);
+  stroke(60, 65, 75);
+  fill(100, 105, 115);
+  textAlign(CENTER, TOP);
+  textSize(16);
   int horiz_unit = getUnit(BUCKET_MAX, 0.05);
   for(int b = 0; b < BUCKET_MAX; b+=horiz_unit){
     float line_x = x+w*(float)b/BUCKET_MAX;
     line(line_x,y,line_x,y+h);
-    text(b,line_x,y+h+30);
+    text(b,line_x,y+h+6);
   }
   int max = 0;
   for(int s = 0; s < strat_codes.length; s++){
-    max = max(max,strats[s].getBucketMax());
+    max = max(max,strats_old[s].getBucketMax());
+    max = max(max,strats_corner[s].getBucketMax());
   }
   int vert_unit = getUnit(max, 0.2);
-  textAlign(RIGHT);
+  textAlign(RIGHT, CENTER);
   for(int u = 0; u < max; u += vert_unit){
     float line_y = y+h-h*((float)u/max);
     line(x,line_y,x+w,line_y);
-    text(commafy(u),x-6,line_y+10);
+    text(commafy(u),x-8,line_y);
   }
   
+  // Draw old maneuvers (solid lines)
   for(int s = 0; s < strat_codes.length; s++){
     stroke(colors[s]);
     for(int b = 0; b < BUCKET_MAX-1; b++){
       float x1 = x+w*(float)b/BUCKET_MAX;
       float x2 = x+w*(float)(b+1)/BUCKET_MAX;
-      float y1 = y+h-h*((float)strats[s].buckets[b]/max);
-      float y2 = y+h-h*((float)strats[s].buckets[b+1]/max);
-      strokeWeight(5);
-      if(s < strat_codes.length-1 && 
-      strats[s].buckets[b] == strats[s+1].buckets[b] &&
-      strats[s].buckets[b+1] == strats[s+1].buckets[b+1]){
-        strokeWeight(10);
-      }
+      float y1 = y+h-h*((float)strats_old[s].buckets[b]/max);
+      float y2 = y+h-h*((float)strats_old[s].buckets[b+1]/max);
+      strokeWeight(3);
       line(x1,y1,x2,y2);
     }
-    strokeWeight(5);
-    float avg = strats[s].data[0];
+    strokeWeight(3);
+    float avg = strats_old[s].data[0];
     float x_avg = x+w*avg/BUCKET_MAX;
-    float y_avg = y+h-h*getFloatValue(strats[s].buckets,avg)/max;
+    float y_avg = y+h-h*getFloatValue(strats_old[s].buckets,avg)/max;
     dottedLine(x_avg,y_avg,x_avg,y+h,20,1.61803*s);
   }
+
+  // Draw corner maneuvers (dashed lines)
+  for(int s = 0; s < strat_codes.length; s++){
+    stroke(colors[s]);
+    for(int b = 0; b < BUCKET_MAX-1; b++){
+      float x1 = x+w*(float)b/BUCKET_MAX;
+      float x2 = x+w*(float)(b+1)/BUCKET_MAX;
+      float y1 = y+h-h*((float)strats_corner[s].buckets[b]/max);
+      float y2 = y+h-h*((float)strats_corner[s].buckets[b+1]/max);
+      strokeWeight(2);
+      // Draw dashed line
+      float dashLength = 8;
+      float totalDist = dist(x1, y1, x2, y2);
+      int numDashes = ceil(totalDist / (dashLength * 2));
+      for(int d = 0; d < numDashes; d += 2){
+        float startT = (float)d / numDashes;
+        float endT = min((float)(d+1) / numDashes, 1.0);
+        float dx1 = lerp(x1, x2, startT);
+        float dy1 = lerp(y1, y2, startT);
+        float dx2 = lerp(x1, x2, endT);
+        float dy2 = lerp(y1, y2, endT);
+        line(dx1, dy1, dx2, dy2);
+      }
+    }
+    strokeWeight(2);
+    float avg = strats_corner[s].data[0];
+    float x_avg = x+w*avg/BUCKET_MAX;
+    float y_avg = y+h-h*getFloatValue(strats_corner[s].buckets,avg)/max;
+    // Draw dashed average line
+    dottedLine(x_avg,y_avg,x_avg,y+h,12,1.61803*s + 0.25);
+  }
   
-  textSize(40);
-  fill(0);
-  text("N = "+commafy(runs),x+w-10,y+40);
+  // Sample count - positioned in top-left of graph to avoid button overlap
+  textSize(22);
+  textAlign(LEFT, TOP);
+  fill(200, 205, 215);
+  text("N = "+commafy(runs), x + 10, y + 10);
 }
 void dottedLine(float x1, float y1, float x2, float y2, float size, float offset){
   float dist_ = dist(x1,y1,x2,y2);
@@ -198,7 +283,8 @@ void drawButtons(){
 void setNewPaths(){
   path_chosen = newPath();
   for(int s = 0; s < strat_codes.length; s++){
-    strats[s].pathfind(path_chosen);
+    strats_old[s].pathfind(path_chosen);
+    strats_corner[s].pathfind(path_chosen);
   }
 }
 int[] ringAroundTheDiamond(){
